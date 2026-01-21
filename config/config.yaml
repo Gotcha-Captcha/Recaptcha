@@ -1,0 +1,109 @@
+# reCAPTCHA Auto-Solver Configuration
+
+# 데이터 설정
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  features_dir: "data/features"
+  
+  # 데이터셋 목록
+  datasets:
+    - name: "sanjeetsinghnaik/google-recaptcha"
+      output: "google-recaptcha"
+    - name: "mikhailma/test-dataset"
+      output: "test-dataset"
+    - name: "cry2003/google-recaptcha-v2-images"
+      output: "google-recaptcha-v2"
+
+# 전처리 설정
+preprocessing:
+  target_size: [224, 224]
+  color_space: "HSV"  # HSV or Lab
+  apply_equalization: true
+  equalization_method: "CLAHE"  # CLAHE or Histogram
+  # K-fold는 train.py에서 수행하므로 여기서는 분할하지 않음
+
+# 특징 추출 설정
+features:
+  hog:
+    cell_size: [8, 8]
+    block_size: [16, 16]
+    nbins: 9
+    enabled: true
+  
+  color_histogram:
+    bins: 32
+    enabled: true
+  
+  lbp:
+    num_points: 24
+    radius: 3
+    enabled: true
+  
+  gradient:
+    enabled: true
+  
+  texture:
+    enabled: true
+
+# 모델 학습 설정
+training:
+  kfold:
+    n_splits: 5
+    stratified: true
+    shuffle: true
+    random_state: 42
+  
+  classifier: "svm"  # svm, random_forest, knn, logistic_regression, xgboost, adaboost
+  feature_type: "combined"  # hog, color_hist, lbp, combined
+  use_feature_selection: false  # PCA 또는 SelectKBest 사용 여부
+  
+  scaling:
+    method: "standard"  # standard, minmax, robust
+  
+  class_weight: "balanced"  # balanced, None, 또는 커스텀 가중치
+  
+  hyperparameter_tuning:
+    enabled: true
+    method: "grid_search"  # grid_search, random_search
+    cv: 5
+  
+  ensemble:
+    enabled: false
+    method: "voting"  # voting, stacking
+    voting_type: "soft"  # hard, soft
+  
+  svm:
+    kernel: "rbf"  # rbf, linear, poly, sigmoid
+    C: [0.1, 1.0, 10.0]  # 그리드 서치용
+    gamma: ["scale", "auto", 0.001, 0.01]
+  
+  random_forest:
+    n_estimators: [50, 100, 200]
+    max_depth: [None, 10, 20, 30]
+    min_samples_split: [2, 5, 10]
+  
+  knn:
+    n_neighbors: [3, 5, 7, 9]
+    weights: ["uniform", "distance"]
+  
+  logistic_regression:
+    max_iter: 1000
+    solver: "lbfgs"
+    C: [0.1, 1.0, 10.0]
+    penalty: ["l2", "l1"]
+  
+  xgboost:
+    n_estimators: 100
+    max_depth: [3, 5, 7]
+    learning_rate: [0.01, 0.1, 0.3]
+  
+  adaboost:
+    n_estimators: [50, 100, 200]
+    learning_rate: [0.5, 1.0, 1.5]
+
+# 시각화 설정
+visualization:
+  num_samples: 20
+  dpi: 150
+  figure_size: [24, 16]

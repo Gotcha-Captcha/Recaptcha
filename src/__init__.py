@@ -1,1 +1,3 @@
-# reCAPTCHA Auto-Solver ML Project
+"""
+reCAPTCHA Auto-Solver using Traditional ML
+"""
