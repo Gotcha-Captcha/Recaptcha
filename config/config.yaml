@@ -17,18 +17,71 @@ data:
 
 # 전처리 설정
 preprocessing:
-  target_size: [224, 224]
-  color_space: "HSV"  # HSV or Lab
-  apply_equalization: true
-  equalization_method: "CLAHE"  # CLAHE or Histogram
-  # K-fold는 train.py에서 수행하므로 여기서는 분할하지 않음
+  # 이미지 크기 설정
+  target_size: [112, 112]  # HOG와 LBP 균형을 위한 크기
+  resize_method: "bilinear"  # bilinear, nearest, cubic
+  
+  # 타일 분할 (조건부 - 데이터셋 구조 확인 후 결정)
+  tile_segmentation:
+    enabled: false  # 데이터셋이 이미 타일로 나뉘어 있으면 false
+    grid_size: [3, 3]  # 3x3 = 9개 타일
+    min_image_size: 200  # 이 크기 이상일 때만 분할
+  
+  # 노이즈 제거 (조건부)
+  noise_reduction:
+    enabled: true
+    method: "gaussian"  # gaussian, bilateral
+    threshold: 15.0  # 표준편차가 이 값 이상이면 적용
+    gaussian_kernel: [3, 3]  # 작은 커널로 보수적 적용
+    bilateral_d: 9  # bilateral filter 파라미터
+    bilateral_sigma_color: 75
+    bilateral_sigma_space: 75
+  
+  # CLAHE (적응적)
+  clahe:
+    enabled: true
+    clip_limit: 2.0  # 기본값, 어두운 이미지는 3.0
+    tile_grid_size: [8, 8]  # 기본값, 작은 이미지는 [4, 4]
+    brightness_threshold: 100  # 평균 밝기가 이 값 이하면 clip_limit 증가
+  
+  # 색상 공간 변환
+  color_space:
+    hsv: true  # Color Histogram용
+    lab: false  # 선택적 (실험용)
+    grayscale: true  # HOG, LBP, Texture용
+  
+  # 감마 교정 (선택적)
+  gamma_correction:
+    enabled: true
+    threshold: 100  # 평균 밝기가 이 값 이하면 적용
+    gamma: 0.8  # 어두운 부분 밝게 (0.7 ~ 0.9)
+  
+  # 정규화
+  normalization:
+    method: "minmax"  # minmax, standard
+    range: [0.0, 1.0]  # MinMax 정규화 범위
+  
+  # 데이터 증강 (선택적 - 특징 추출 전에는 비활성화)
+  augmentation:
+    enabled: false  # 학습 시에만 활성화
+    rotation_range: 15
+    horizontal_flip: true
+    brightness_range: [0.8, 1.2]
+  
+  # 시각화 설정
+  visualization:
+    num_samples: 10  # 각 단계별 비교할 샘플 수
+    save_intermediate: false  # 중간 단계 이미지 저장 여부
 
 # 특징 추출 설정
 features:
   hog:
-    cell_size: [8, 8]
-    block_size: [16, 16]
-    nbins: 9
+    # 112x112 이미지에 최적화된 파라미터
+    cell_size: [8, 8]      # 112 / 8 = 14 cells per dimension
+    block_size: [2, 2]     # 2x2 cells per block (16x16 pixels)
+    block_stride: [1, 1]   # 50% overlap
+    nbins: 9               # 9 orientation bins
+    win_size: [112, 112]   # 전체 이미지 크기
     enabled: true
   
   color_histogram:
@@ -46,6 +99,21 @@ features:
   texture:
     enabled: true
 
+# 데이터 품질 검사 설정
+data_quality:
+  # 중복 이미지 검출
+  duplicate_detection:
+    enabled: true
+    method: "hash"  # hash (fast) or feature (accurate but slow)
+    similarity_threshold: 0.95
+    remove_duplicates: true  # 중복 제거 여부
+  
+  # 클래스 불균형 처리
+  class_imbalance:
+    check_distribution: true
+    min_samples_per_class: 10  # 최소 샘플 수
+    max_balance_ratio: 2.0     # 최대 불균형 비율
+
 # 모델 학습 설정
 training:
   kfold:
@@ -53,6 +121,18 @@ training:
     stratified: true
     shuffle: true
     random_state: 42
+  
+  # Feature Scaling (⚠️ 필수!)
+  feature_scaling:
+    enabled: true
+    method: "standard"  # standard, minmax, robust
+    scale_before_combine: false  # 특징 결합 전 개별 스케일링 (false 권장)
+  
+  # PCA 차원 축소
+  pca:
+    enabled: false  # feature_selection.py에서 활성화
+    variance_threshold: 0.95  # 95% 분산 보존
+    auto_optimal_dim: true    # 자동으로 최적 차원 찾기
   
   classifier: "svm"  # svm, random_forest, knn, logistic_regression, xgboost, adaboost
   feature_type: "combined"  # hog, color_hist, lbp, combined
