@@ -19,6 +19,10 @@ from src.preprocess.data_quality import (
     visualize_class_distribution,
     get_representative_images
 )
+from src.preprocess.remove_duplicates import (
+    remove_duplicate_images,
+    filter_classes
+)
 from src.preprocess.analyze import analyze_dataset_structure
 from src.preprocess.resize import resize_dataset
 from src.preprocess.noise_reduction import reduce_noise_dataset
@@ -51,6 +55,8 @@ def run_preprocessing_pipeline(config_path: Path,
     project_root = Path(__file__).parent.parent.parent
     raw_data_dir = project_root / config['data']['raw_dir']
     processed_dir = project_root / config['data']['processed_dir']
+    visualization_dir = project_root / "data" / "visualization"
+    ensure_dir(visualization_dir)
     
     print("\n" + "="*60)
     print("reCAPTCHA Preprocessing Pipeline")
@@ -60,7 +66,64 @@ def run_preprocessing_pipeline(config_path: Path,
     print("="*60)
     
     results = {}
-    current_dir = raw_data_dir
+    # 단계별 실행 시 이전 단계의 출력을 입력으로 사용
+    if step == "clahe":
+        # CLAHE를 단독 실행할 때는 resize 결과를 입력으로 사용
+        resize_output = processed_dir / "resized"
+        if resize_output.exists():
+            # 이미지 파일이 있는지 확인
+            image_files = list(resize_output.rglob("*.png")) + list(resize_output.rglob("*.jpg")) + \
+                         list(resize_output.rglob("*.jpeg"))
+            if image_files:
+                current_dir = resize_output
+                print(f"✓ Using existing resized images from: {current_dir}")
+            else:
+                current_dir = raw_data_dir
+                print(f"⚠️  Resized images not found, using raw data: {current_dir}")
+        else:
+            current_dir = raw_data_dir
+            print(f"⚠️  Resized directory not found, using raw data: {current_dir}")
+    elif step == "noise_reduction":
+        # Noise Reduction만 실행할 때는 CLAHE v2 결과를 우선 확인
+        clahe_v2_output = processed_dir / "clahe_v2"
+        if clahe_v2_output.exists():
+            image_files = list(clahe_v2_output.rglob("*.png")) + list(clahe_v2_output.rglob("*.jpg")) + \
+                         list(clahe_v2_output.rglob("*.jpeg"))
+            if image_files:
+                current_dir = clahe_v2_output
+                print(f"✓ Using existing CLAHE v2 images from: {current_dir}")
+            else:
+                # CLAHE v2가 없으면 기존 CLAHE 확인
+                clahe_output = processed_dir / "clahe"
+                if clahe_output.exists():
+                    image_files = list(clahe_output.rglob("*.png")) + list(clahe_output.rglob("*.jpg")) + \
+                                 list(clahe_output.rglob("*.jpeg"))
+                    if image_files:
+                        current_dir = clahe_output
+                        print(f"⚠️  Using existing CLAHE (v1) images from: {current_dir}")
+                    else:
+                        current_dir = raw_data_dir
+                        print(f"⚠️  No CLAHE images found, using raw data: {current_dir}")
+                else:
+                    current_dir = raw_data_dir
+                    print(f"⚠️  No CLAHE directory found, using raw data: {current_dir}")
+        else:
+            # CLAHE v2가 없으면 기존 CLAHE 확인
+            clahe_output = processed_dir / "clahe"
+            if clahe_output.exists():
+                image_files = list(clahe_output.rglob("*.png")) + list(clahe_output.rglob("*.jpg")) + \
+                             list(clahe_output.rglob("*.jpeg"))
+                if image_files:
+                    current_dir = clahe_output
+                    print(f"⚠️  Using existing CLAHE (v1) images from: {current_dir}")
+                else:
+                    current_dir = raw_data_dir
+                    print(f"⚠️  No CLAHE images found, using raw data: {current_dir}")
+            else:
+                current_dir = raw_data_dir
+                print(f"⚠️  No CLAHE directory found, using raw data: {current_dir}")
+    else:
+        current_dir = raw_data_dir
     
     # Step 0: Data Quality Checks (🚨 Critical!)
     if (step is None or step == "data_quality") and config.get('data_quality', {}).get('duplicate_detection', {}).get('enabled', True):
@@ -82,7 +145,7 @@ def run_preprocessing_pipeline(config_path: Path,
         # 1. Class Distribution Analysis
         print("\n--- Analyzing Class Distribution ---")
         class_dist = analyze_class_distribution(raw_data_dir)
-        visualize_class_distribution(class_dist, quality_output)
+        visualize_class_distribution(class_dist, quality_output, visualization_dir)
         results['class_distribution'] = class_dist
         
         # Save class distribution
@@ -142,6 +205,42 @@ def run_preprocessing_pipeline(config_path: Path,
             json.dump(results, f, indent=2, default=str)
         
         print(f"\n✓ Data quality checks complete. Results saved to {quality_output}")
+        
+        # Apply duplicate removal and class filtering if enabled
+        quality_config = config.get('data_quality', {})
+        dup_config = quality_config.get('duplicate_detection', {})
+        
+        if dup_config.get('remove_duplicates', True) and duplicate_groups:
+            print("\n" + "="*60)
+            print("Applying duplicate removal...")
+            print("="*60)
+            
+            duplicate_groups_path = quality_output / "duplicate_groups.json"
+            removal_stats = remove_duplicate_images(
+                duplicate_groups_path,
+                quality_output,
+                action='move'  # Move to removed_duplicates folder (safer than delete)
+            )
+            results['duplicate_removal'] = removal_stats
+        
+        # Filter out problematic classes
+        classes_to_exclude = ['visualizations']  # Add 'Mountain' if needed
+        if classes_to_exclude:
+            print("\n" + "="*60)
+            print(f"Filtering out classes: {classes_to_exclude}")
+            print("="*60)
+            
+            filtering_stats = filter_classes(
+                raw_data_dir,
+                classes_to_exclude,
+                quality_output,
+                action='move'
+            )
+            results['class_filtering'] = filtering_stats
+        
+        # Save updated results
+        with open(quality_output / "quality_checks.json", 'w') as f:
+            json.dump(results, f, indent=2, default=str)
     
     # Step 1: Dataset Structure Analysis
     if not skip_analysis and (step is None or step == "analyze"):
@@ -150,7 +249,8 @@ def run_preprocessing_pipeline(config_path: Path,
         analysis_result = analyze_dataset_structure(
             raw_data_dir, 
             analysis_output,
-            num_samples=1000
+            num_samples=0,  # 0 = analyze all images
+            vis_dir=visualization_dir
         )
         results['analysis'] = analysis_result
         
@@ -170,35 +270,18 @@ def run_preprocessing_pipeline(config_path: Path,
             resize_output,
             target_size=tuple(preprocess_config['target_size']),
             method=preprocess_config['resize_method'],
-            num_samples=vis_config['num_samples']
+            num_samples=vis_config['num_samples'],
+            vis_dir=visualization_dir
         )
         results['resize'] = resize_result
         current_dir = resize_output
     
-    # Step 2: Noise Reduction
-    if (step is None or step == "noise_reduction") and preprocess_config['noise_reduction']['enabled']:
-        print("\n[Step 2] Noise Reduction")
-        noise_output = processed_dir / "denoised"
-        noise_result = reduce_noise_dataset(
-            current_dir,
-            noise_output,
-            method=preprocess_config['noise_reduction']['method'],
-            threshold=preprocess_config['noise_reduction']['threshold'],
-            gaussian_kernel=tuple(preprocess_config['noise_reduction']['gaussian_kernel']),
-            bilateral_params={
-                'd': preprocess_config['noise_reduction']['bilateral_d'],
-                'sigma_color': preprocess_config['noise_reduction']['bilateral_sigma_color'],
-                'sigma_space': preprocess_config['noise_reduction']['bilateral_sigma_space']
-            },
-            num_samples=vis_config['num_samples']
-        )
-        results['noise_reduction'] = noise_result
-        current_dir = noise_output
-    
-    # Step 3: CLAHE
+    # Step 2: CLAHE (먼저 적용하여 엣지 강조) - v2 파이프라인
     if (step is None or step == "clahe") and preprocess_config['clahe']['enabled']:
-        print("\n[Step 3] CLAHE")
-        clahe_output = processed_dir / "clahe"
+        print("\n[Step 2] CLAHE (v2: CLAHE → Gaussian 파이프라인)")
+        clahe_output = processed_dir / "clahe_v2"  # v2로 저장
+        clahe_vis_dir = visualization_dir / "clahe_v2"  # v2 시각화 폴더
+        ensure_dir(clahe_vis_dir)
         clahe_result = apply_clahe_dataset(
             current_dir,
             clahe_output,
@@ -206,46 +289,120 @@ def run_preprocessing_pipeline(config_path: Path,
             tile_grid_size=tuple(preprocess_config['clahe']['tile_grid_size']),
             adaptive=True,
             brightness_threshold=preprocess_config['clahe']['brightness_threshold'],
-            num_samples=vis_config['num_samples']
+            num_samples=vis_config['num_samples'],
+            vis_dir=clahe_vis_dir  # v2 시각화 폴더 사용
         )
         results['clahe'] = clahe_result
         current_dir = clahe_output
     
-    # Step 4: Color Space Conversion
+    # Step 3: Noise Reduction (CLAHE 후 Gaussian으로 노이즈 제거) - v2 파이프라인
+    # 실험 결과: CLAHE → Gaussian이 최적 성능 (노이즈 제거 + HOG 보존 균형)
+    if (step is None or step == "noise_reduction") and preprocess_config['noise_reduction']['enabled']:
+        print("\n[Step 3] Noise Reduction (Gaussian Blur) - v2: CLAHE → Gaussian 파이프라인")
+        # Noise Reduction 단독 실행 시 CLAHE v2 결과를 입력으로 사용
+        if step == "noise_reduction":
+            clahe_output = processed_dir / "clahe_v2"
+            if clahe_output.exists():
+                image_files = list(clahe_output.rglob("*.png")) + list(clahe_output.rglob("*.jpg")) + \
+                             list(clahe_output.rglob("*.jpeg"))
+                if image_files:
+                    current_dir = clahe_output
+                    print(f"✓ Using existing CLAHE v2 images from: {current_dir}")
+        
+        noise_output = processed_dir / "denoised_v2"  # v2로 저장
+        noise_vis_dir = visualization_dir / "noise_reduction_v2"  # v2 시각화 폴더
+        ensure_dir(noise_vis_dir)
+        noise_result = reduce_noise_dataset(
+            current_dir,
+            noise_output,
+            method="gaussian",  # 실험 결과: CLAHE → Gaussian이 최적
+            threshold=preprocess_config['noise_reduction']['threshold'],
+            gaussian_kernel=tuple(preprocess_config['noise_reduction']['gaussian_kernel']),
+            gaussian_sigma=preprocess_config['noise_reduction'].get('gaussian_sigma', 1.0),
+            bilateral_params={
+                'd': preprocess_config['noise_reduction'].get('bilateral_d', 5),
+                'sigma_color': preprocess_config['noise_reduction'].get('bilateral_sigma_color', 50),
+                'sigma_space': preprocess_config['noise_reduction'].get('bilateral_sigma_space', 50)
+            },
+            num_samples=vis_config['num_samples'],
+            vis_dir=noise_vis_dir  # v2 시각화 폴더 사용
+        )
+        results['noise_reduction'] = noise_result
+        current_dir = noise_output
+    
+    # Step 4: Color Space Conversion - v2 파이프라인
     if step is None or step == "color_space":
-        print("\n[Step 4] Color Space Conversion")
-        color_output = processed_dir / "color_spaces"
+        print("\n[Step 4] Color Space Conversion (v2: CLAHE → Gaussian 파이프라인)")
+        # Color Space 단독 실행 시 denoised_v2 결과를 입력으로 사용
+        if step == "color_space":
+            denoised_v2_output = processed_dir / "denoised_v2"
+            if denoised_v2_output.exists():
+                image_files = list(denoised_v2_output.rglob("*.png")) + list(denoised_v2_output.rglob("*.jpg")) + \
+                             list(denoised_v2_output.rglob("*.jpeg"))
+                if image_files:
+                    current_dir = denoised_v2_output
+                    print(f"✓ Using existing denoised_v2 images from: {current_dir}")
+        
+        color_output = processed_dir / "color_spaces_v2"  # v2로 저장
+        color_vis_dir = visualization_dir / "color_space_v2"  # v2 시각화 폴더
+        ensure_dir(color_vis_dir)
         color_result = convert_color_spaces_dataset(
             current_dir,
             color_output,
             convert_hsv=preprocess_config['color_space']['hsv'],
             convert_lab=preprocess_config['color_space']['lab'],
             convert_grayscale=preprocess_config['color_space']['grayscale'],
-            num_samples=vis_config['num_samples']
+            num_samples=vis_config['num_samples'],
+            vis_dir=color_vis_dir  # v2 시각화 폴더 사용
         )
         results['color_space'] = color_result
         # Use grayscale for next steps if available
         if preprocess_config['color_space']['grayscale']:
             current_dir = color_output / "grayscale"
     
-    # Step 5: Gamma Correction
+    # Step 5: Gamma Correction - v2 파이프라인
     if (step is None or step == "gamma") and preprocess_config['gamma_correction']['enabled']:
-        print("\n[Step 5] Gamma Correction")
-        gamma_output = processed_dir / "gamma_corrected"
+        print("\n[Step 5] Gamma Correction (v2: CLAHE → Gaussian 파이프라인)")
+        # Gamma Correction 단독 실행 시 color_spaces_v2/grayscale 결과를 입력으로 사용
+        if step == "gamma":
+            color_spaces_v2_output = processed_dir / "color_spaces_v2" / "grayscale"
+            if color_spaces_v2_output.exists():
+                image_files = list(color_spaces_v2_output.rglob("*.png")) + list(color_spaces_v2_output.rglob("*.jpg")) + \
+                             list(color_spaces_v2_output.rglob("*.jpeg"))
+                if image_files:
+                    current_dir = color_spaces_v2_output
+                    print(f"✓ Using existing color_spaces_v2/grayscale images from: {current_dir}")
+        
+        gamma_output = processed_dir / "gamma_corrected_v2"  # v2로 저장
+        gamma_vis_dir = visualization_dir / "gamma_correction_v2"  # v2 시각화 폴더
+        ensure_dir(gamma_vis_dir)
         gamma_result = apply_gamma_correction_dataset(
             current_dir,
             gamma_output,
             gamma=preprocess_config['gamma_correction']['gamma'],
             threshold=preprocess_config['gamma_correction']['threshold'],
-            num_samples=vis_config['num_samples']
+            num_samples=vis_config['num_samples'],
+            vis_dir=gamma_vis_dir  # v2 시각화 폴더 사용
         )
         results['gamma_correction'] = gamma_result
         current_dir = gamma_output
     
-    # Step 6: Normalization
+    # Step 6: Normalization - v2 파이프라인
     if step is None or step == "normalize":
-        print("\n[Step 6] Normalization")
-        normalize_output = processed_dir / "normalized"
+        print("\n[Step 6] Normalization (v2: CLAHE → Gaussian 파이프라인)")
+        # Normalization 단독 실행 시 gamma_corrected_v2 결과를 입력으로 사용
+        if step == "normalize":
+            gamma_corrected_v2_output = processed_dir / "gamma_corrected_v2"
+            if gamma_corrected_v2_output.exists():
+                image_files = list(gamma_corrected_v2_output.rglob("*.png")) + list(gamma_corrected_v2_output.rglob("*.jpg")) + \
+                             list(gamma_corrected_v2_output.rglob("*.jpeg"))
+                if image_files:
+                    current_dir = gamma_corrected_v2_output
+                    print(f"✓ Using existing gamma_corrected_v2 images from: {current_dir}")
+        
+        normalize_output = processed_dir / "normalized_v2"  # v2로 저장
+        normalize_vis_dir = visualization_dir / "normalization_v2"  # v2 시각화 폴더
+        ensure_dir(normalize_vis_dir)
         normalize_result = normalize_dataset(
             current_dir,
             normalize_output,
@@ -253,7 +410,8 @@ def run_preprocessing_pipeline(config_path: Path,
             range_min=preprocess_config['normalization']['range'][0],
             range_max=preprocess_config['normalization']['range'][1],
             save_as_float=True,  # Save as .npy for feature extraction
-            num_samples=vis_config['num_samples']
+            num_samples=vis_config['num_samples'],
+            vis_dir=normalize_vis_dir  # v2 시각화 폴더 사용
         )
         results['normalization'] = normalize_result
         current_dir = normalize_output
@@ -282,6 +440,10 @@ def main():
                        choices=['data_quality', 'analyze', 'resize', 'noise_reduction', 'clahe', 
                                'color_space', 'gamma', 'normalize'],
                        help='Run specific step only')
+    parser.add_argument('--remove-duplicates', action='store_true',
+                       help='Remove duplicate images after detection')
+    parser.add_argument('--exclude-classes', nargs='+', default=['visualizations'],
+                       help='Classes to exclude (default: visualizations)')
     parser.add_argument('--skip-analysis', action='store_true',
                        help='Skip dataset analysis step')
     

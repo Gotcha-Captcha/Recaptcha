@@ -31,7 +31,7 @@ def convert_color_spaces_dataset(input_dir: Path, output_dir: Path,
                                 convert_hsv: bool = True,
                                 convert_lab: bool = False,
                                 convert_grayscale: bool = True,
-                                num_samples: int = 10) -> dict:
+                                num_samples: int = 10, vis_dir: Path = None) -> dict:
     """
     Convert all images to specified color spaces.
     
@@ -128,7 +128,7 @@ def convert_color_spaces_dataset(input_dir: Path, output_dir: Path,
     
     # Visualize results
     visualize_color_space_conversions(sample_images, sample_paths, output_dir,
-                                      convert_hsv, convert_lab, convert_grayscale)
+                                      convert_hsv, convert_lab, convert_grayscale, vis_dir)
     
     stats = {
         'total_images': len(image_paths),
@@ -148,9 +148,11 @@ def convert_color_spaces_dataset(input_dir: Path, output_dir: Path,
 
 def visualize_color_space_conversions(sample_images: List[Tuple], sample_paths: List[Path],
                                      output_dir: Path, convert_hsv: bool, 
-                                     convert_lab: bool, convert_grayscale: bool):
+                                     convert_lab: bool, convert_grayscale: bool, vis_dir: Path = None):
     """Visualize color space conversions."""
-    ensure_dir(output_dir / "visualizations")
+    if vis_dir is None:
+        vis_dir = output_dir / "visualizations"
+    ensure_dir(vis_dir)
     
     num_samples = len(sample_images)
     if num_samples == 0:
@@ -203,8 +205,8 @@ def visualize_color_space_conversions(sample_images: List[Tuple], sample_paths: 
             col += 1
     
     plt.tight_layout()
-    plt.savefig(output_dir / "visualizations" / "color_space_conversions.png", 
+    plt.savefig(vis_dir / "color_space_conversions.png", 
                 dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved color space visualization to {output_dir / 'visualizations' / 'color_space_conversions.png'}")
+    print(f"✓ Saved color space visualization to {vis_dir / 'color_space_conversions.png'}")

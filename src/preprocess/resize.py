@@ -40,7 +40,7 @@ def resize_image(image: np.ndarray, target_size: Tuple[int, int],
 
 def resize_dataset(input_dir: Path, output_dir: Path, 
                   target_size: Tuple[int, int], method: str = "bilinear",
-                  num_samples: int = 10) -> dict:
+                  num_samples: int = 10, vis_dir: Path = None) -> dict:
     """
     Resize all images in dataset to target size.
     
@@ -110,7 +110,7 @@ def resize_dataset(input_dir: Path, output_dir: Path,
             failed_count += 1
     
     # Visualize results
-    visualize_resize_results(sample_images, sample_paths, output_dir, target_size)
+    visualize_resize_results(sample_images, sample_paths, output_dir, target_size, vis_dir)
     
     stats = {
         'total_images': len(image_paths),
@@ -128,9 +128,13 @@ def resize_dataset(input_dir: Path, output_dir: Path,
 
 
 def visualize_resize_results(sample_images: List[Tuple], sample_paths: List[Path],
-                            output_dir: Path, target_size: Tuple[int, int]):
+                            output_dir: Path, target_size: Tuple[int, int], vis_dir: Path = None):
     """Visualize resize results with before/after comparison."""
-    ensure_dir(output_dir / "visualizations")
+    if vis_dir is None:
+        vis_dir = output_dir / "visualizations"
+    else:
+        vis_dir = vis_dir / "resize"
+    ensure_dir(vis_dir)
     
     num_samples = len(sample_images)
     if num_samples == 0:
@@ -164,8 +168,8 @@ def visualize_resize_results(sample_images: List[Tuple], sample_paths: List[Path
         axes[i, 1].axis('off')
     
     plt.tight_layout()
-    plt.savefig(output_dir / "visualizations" / "resize_comparison.png", 
+    plt.savefig(vis_dir / "resize_comparison.png", 
                 dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved resize visualization to {output_dir / 'visualizations' / 'resize_comparison.png'}")
+    print(f"✓ Saved resize visualization to {vis_dir / 'resize_comparison.png'}")

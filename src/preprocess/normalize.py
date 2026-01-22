@@ -55,7 +55,7 @@ def normalize_dataset(input_dir: Path, output_dir: Path,
                      range_min: float = 0.0,
                      range_max: float = 1.0,
                      save_as_float: bool = True,
-                     num_samples: int = 10) -> dict:
+                     num_samples: int = 10, vis_dir: Path = None) -> dict:
     """
     Normalize all images in dataset.
     
@@ -138,7 +138,7 @@ def normalize_dataset(input_dir: Path, output_dir: Path,
             sample_paths.append(relative_path)
     
     # Visualize results
-    visualize_normalization_results(sample_images, sample_paths, output_dir, method)
+    visualize_normalization_results(sample_images, sample_paths, output_dir, method, vis_dir)
     
     stats = {
         'total_images': len(image_paths),
@@ -157,9 +157,11 @@ def normalize_dataset(input_dir: Path, output_dir: Path,
 
 
 def visualize_normalization_results(sample_images: List[Tuple], sample_paths: List[Path],
-                                   output_dir: Path, method: str):
+                                   output_dir: Path, method: str, vis_dir: Path = None):
     """Visualize normalization results."""
-    ensure_dir(output_dir / "visualizations")
+    if vis_dir is None:
+        vis_dir = output_dir / "visualizations"
+    ensure_dir(vis_dir)
     
     num_samples = len(sample_images)
     if num_samples == 0:
@@ -198,8 +200,8 @@ def visualize_normalization_results(sample_images: List[Tuple], sample_paths: Li
         axes[i, 1].axis('off')
     
     plt.tight_layout()
-    plt.savefig(output_dir / "visualizations" / "normalization_comparison.png", 
+    plt.savefig(vis_dir / "normalization_comparison.png", 
                 dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved normalization visualization to {output_dir / 'visualizations' / 'normalization_comparison.png'}")
+    print(f"✓ Saved normalization visualization to {vis_dir / 'normalization_comparison.png'}")

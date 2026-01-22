@@ -27,15 +27,16 @@ preprocessing:
     grid_size: [3, 3]  # 3x3 = 9개 타일
     min_image_size: 200  # 이 크기 이상일 때만 분할
   
-  # 노이즈 제거 (조건부)
+  # 노이즈 제거 (조건부) - CLAHE 후 적용
   noise_reduction:
     enabled: true
-    method: "gaussian"  # gaussian, bilateral
-    threshold: 15.0  # 표준편차가 이 값 이상이면 적용
-    gaussian_kernel: [3, 3]  # 작은 커널로 보수적 적용
-    bilateral_d: 9  # bilateral filter 파라미터
-    bilateral_sigma_color: 75
-    bilateral_sigma_space: 75
+    method: "gaussian"  # 실험 결과: CLAHE → Gaussian이 최적
+    threshold: 100.0  # Laplacian variance가 이 값 이상이면 적용
+    gaussian_kernel: [3, 3]  # gaussian 사용 시
+    gaussian_sigma: 1.0  # Gaussian blur sigma 값
+    bilateral_d: 5  # bilateral 사용 시 (현재는 사용 안 함)
+    bilateral_sigma_color: 50
+    bilateral_sigma_space: 50
   
   # CLAHE (적응적)
   clahe:

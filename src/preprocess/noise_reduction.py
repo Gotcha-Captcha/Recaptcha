@@ -12,20 +12,25 @@ from tqdm import tqdm
 from .utils import load_image, save_image, get_image_stats, ensure_dir
 
 
-def apply_gaussian_blur(image: np.ndarray, kernel_size: Tuple[int, int] = (3, 3)) -> np.ndarray:
+def apply_gaussian_blur(image: np.ndarray, kernel_size: Tuple[int, int] = (3, 3), sigma: float = None) -> np.ndarray:
     """
     Apply Gaussian blur to reduce noise.
     
     Args:
         image: Input image
         kernel_size: Gaussian kernel size (must be odd)
+        sigma: Gaussian kernel standard deviation. If None, calculated from kernel size.
         
     Returns:
         Denoised image
     """
     # Ensure kernel size is odd
     ksize = (kernel_size[0] | 1, kernel_size[1] | 1)
-    return cv2.GaussianBlur(image, ksize, 0)
+    # Calculate sigma from kernel size if not provided
+    # Rule of thumb: sigma = 0.3 * ((ksize-1)*0.5 - 1) + 0.8
+    if sigma is None:
+        sigma = 0.3 * ((ksize[0] - 1) * 0.5 - 1) + 0.8
+    return cv2.GaussianBlur(image, ksize, sigma)
 
 
 def apply_bilateral_filter(image: np.ndarray, d: int = 9, 
@@ -46,27 +51,52 @@ def apply_bilateral_filter(image: np.ndarray, d: int = 9,
     return cv2.bilateralFilter(image, d, sigma_color, sigma_space)
 
 
-def should_apply_noise_reduction(image: np.ndarray, threshold: float = 15.0) -> bool:
+def calculate_noise_level(image: np.ndarray) -> float:
     """
-    Determine if noise reduction should be applied based on noise level.
+    Calculate actual noise level using Laplacian variance method.
+    Higher variance = more noise.
     
     Args:
         image: Input image
-        threshold: Noise threshold (std dev)
+        
+    Returns:
+        Noise level (Laplacian variance)
+    """
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+    
+    # Calculate Laplacian (second derivative)
+    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+    # Variance of Laplacian is a good noise indicator
+    noise_level = laplacian.var()
+    return noise_level
+
+
+def should_apply_noise_reduction(image: np.ndarray, threshold: float = 100.0) -> bool:
+    """
+    Determine if noise reduction should be applied based on noise level.
+    Uses Laplacian variance method for more accurate noise detection.
+    
+    Args:
+        image: Input image
+        threshold: Noise threshold (Laplacian variance)
         
     Returns:
         True if noise reduction should be applied
     """
-    stats = get_image_stats(image)
-    return stats['std_dev'] > threshold
+    noise_level = calculate_noise_level(image)
+    return noise_level > threshold
 
 
 def reduce_noise_dataset(input_dir: Path, output_dir: Path,
                         method: str = "gaussian",
                         threshold: float = 15.0,
                         gaussian_kernel: Tuple[int, int] = (3, 3),
+                        gaussian_sigma: float = 1.0,
                         bilateral_params: Optional[dict] = None,
-                        num_samples: int = 10) -> dict:
+                        num_samples: int = 10, vis_dir: Path = None) -> dict:
     """
     Apply noise reduction to all images in dataset.
     
@@ -123,7 +153,8 @@ def reduce_noise_dataset(input_dir: Path, output_dir: Path,
         
         if should_apply:
             if method == "gaussian":
-                denoised = apply_gaussian_blur(img, gaussian_kernel)
+                # Use configurable sigma for better noise reduction
+                denoised = apply_gaussian_blur(img, gaussian_kernel, sigma=gaussian_sigma)
             elif method == "bilateral":
                 params = bilateral_params or {'d': 9, 'sigma_color': 75, 'sigma_space': 75}
                 denoised = apply_bilateral_filter(img, **params)
@@ -149,7 +180,7 @@ def reduce_noise_dataset(input_dir: Path, output_dir: Path,
             failed_count += 1
     
     # Visualize results
-    visualize_noise_reduction_results(sample_images, sample_paths, output_dir, method)
+    visualize_noise_reduction_results(sample_images, sample_paths, output_dir, method, vis_dir)
     
     stats = {
         'total_images': len(image_paths),
@@ -170,9 +201,13 @@ def reduce_noise_dataset(input_dir: Path, output_dir: Path,
 
 
 def visualize_noise_reduction_results(sample_images: List[Tuple], sample_paths: List[Path],
-                                     output_dir: Path, method: str):
+                                     output_dir: Path, method: str, vis_dir: Path = None):
     """Visualize noise reduction results."""
-    ensure_dir(output_dir / "visualizations")
+    if vis_dir is None:
+        vis_dir = output_dir / "visualizations"
+    else:
+        vis_dir = vis_dir / "noise_reduction"
+    ensure_dir(vis_dir)
     
     num_samples = len(sample_images)
     if num_samples == 0:
@@ -191,8 +226,8 @@ def visualize_noise_reduction_results(sample_images: List[Tuple], sample_paths: 
             axes[i, 0].imshow(cv2.cvtColor(original, cv2.COLOR_BGR2RGB))
         else:
             axes[i, 0].imshow(original, cmap='gray')
-        stats_orig = get_image_stats(original)
-        title = f'Original\nNoise: {stats_orig["std_dev"]:.1f}'
+        noise_orig = calculate_noise_level(original)
+        title = f'Original\nNoise: {noise_orig:.1f}'
         if applied:
             title += ' → Applied'
         axes[i, 0].set_title(title, fontsize=10)
@@ -203,14 +238,14 @@ def visualize_noise_reduction_results(sample_images: List[Tuple], sample_paths: 
             axes[i, 1].imshow(cv2.cvtColor(denoised, cv2.COLOR_BGR2RGB))
         else:
             axes[i, 1].imshow(denoised, cmap='gray')
-        stats_denoised = get_image_stats(denoised)
-        axes[i, 1].set_title(f'Denoised\nNoise: {stats_denoised["std_dev"]:.1f}', 
+        noise_denoised = calculate_noise_level(denoised)
+        axes[i, 1].set_title(f'Denoised\nNoise: {noise_denoised:.1f}', 
                             fontsize=10)
         axes[i, 1].axis('off')
     
     plt.tight_layout()
-    plt.savefig(output_dir / "visualizations" / "noise_reduction_comparison.png", 
+    plt.savefig(vis_dir / "noise_reduction_comparison.png", 
                 dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved noise reduction visualization to {output_dir / 'visualizations' / 'noise_reduction_comparison.png'}")
+    print(f"✓ Saved noise reduction visualization to {vis_dir / 'noise_reduction_comparison.png'}")

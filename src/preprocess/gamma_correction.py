@@ -55,7 +55,7 @@ def should_apply_gamma(image: np.ndarray, threshold: float = 100.0) -> bool:
 def apply_gamma_correction_dataset(input_dir: Path, output_dir: Path,
                                   gamma: float = 0.8,
                                   threshold: float = 100.0,
-                                  num_samples: int = 10) -> dict:
+                                  num_samples: int = 10, vis_dir: Path = None) -> dict:
     """
     Apply gamma correction to all images in dataset.
     
@@ -130,7 +130,7 @@ def apply_gamma_correction_dataset(input_dir: Path, output_dir: Path,
             failed_count += 1
     
     # Visualize results
-    visualize_gamma_correction_results(sample_images, sample_paths, output_dir, gamma)
+    visualize_gamma_correction_results(sample_images, sample_paths, output_dir, gamma, vis_dir)
     
     stats = {
         'total_images': len(image_paths),
@@ -151,9 +151,11 @@ def apply_gamma_correction_dataset(input_dir: Path, output_dir: Path,
 
 
 def visualize_gamma_correction_results(sample_images: List[Tuple], sample_paths: List[Path],
-                                     output_dir: Path, gamma: float):
+                                     output_dir: Path, gamma: float, vis_dir: Path = None):
     """Visualize gamma correction results."""
-    ensure_dir(output_dir / "visualizations")
+    if vis_dir is None:
+        vis_dir = output_dir / "visualizations"
+    ensure_dir(vis_dir)
     
     num_samples = len(sample_images)
     if num_samples == 0:
@@ -190,8 +192,8 @@ def visualize_gamma_correction_results(sample_images: List[Tuple], sample_paths:
         axes[i, 1].axis('off')
     
     plt.tight_layout()
-    plt.savefig(output_dir / "visualizations" / "gamma_correction_comparison.png", 
+    plt.savefig(vis_dir / "gamma_correction_comparison.png", 
                 dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved gamma correction visualization to {output_dir / 'visualizations' / 'gamma_correction_comparison.png'}")
+    print(f"✓ Saved gamma correction visualization to {vis_dir / 'gamma_correction_comparison.png'}")
