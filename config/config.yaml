@@ -3,8 +3,9 @@
 # 데이터 설정
 data:
   raw_dir: "data/raw"
-  processed_dir: "data/processed"
+  processed_dir: "data/processed/v3"
   features_dir: "data/features"
+  visualization_dir: "data/visualization"
   
   # 데이터셋 목록
   datasets:
@@ -18,7 +19,7 @@ data:
 # 전처리 설정
 preprocessing:
   # 이미지 크기 설정
-  target_size: [112, 112]  # HOG와 LBP 균형을 위한 크기
+  target_size: [224, 224]  # v2: 고해상도 적용
   resize_method: "bilinear"  # bilinear, nearest, cubic
   
   # 타일 분할 (조건부 - 데이터셋 구조 확인 후 결정)
@@ -30,11 +31,11 @@ preprocessing:
   # 노이즈 제거 (조건부) - CLAHE 후 적용
   noise_reduction:
     enabled: true
-    method: "gaussian"  # 실험 결과: CLAHE → Gaussian이 최적
+    method: "bilateral"  # 실험 결과: CLAHE → Bilateral이 최적 (EDGE 보존)
     threshold: 100.0  # Laplacian variance가 이 값 이상이면 적용
-    gaussian_kernel: [3, 3]  # gaussian 사용 시
-    gaussian_sigma: 1.0  # Gaussian blur sigma 값
-    bilateral_d: 5  # bilateral 사용 시 (현재는 사용 안 함)
+    gaussian_kernel: [3, 3]  
+    gaussian_sigma: 1.0  
+    bilateral_d: 5  # bilateral 사용 시
     bilateral_sigma_color: 50
     bilateral_sigma_space: 50
   
@@ -78,7 +79,7 @@ preprocessing:
 features:
   hog:
     # 112x112 이미지에 최적화된 파라미터
-    cell_size: [8, 8]      # 112 / 8 = 14 cells per dimension
+    cell_size: [16, 16]      # 112 / 16 = 7 cells per dimension (Dimension: 7*7*2*2*9 = 1764 -> 1,000~2,000 사이 최적)
     block_size: [2, 2]     # 2x2 cells per block (16x16 pixels)
     block_stride: [1, 1]   # 50% overlap
     nbins: 9               # 9 orientation bins
@@ -131,9 +132,9 @@ training:
   
   # PCA 차원 축소
   pca:
-    enabled: false  # feature_selection.py에서 활성화
-    variance_threshold: 0.95  # 95% 분산 보존
-    auto_optimal_dim: true    # 자동으로 최적 차원 찾기
+    enabled: true
+    variance_threshold: 0.80  # Reduced for speed (from 0.95)
+    auto_optimal_dim: true
   
   classifier: "svm"  # svm, random_forest, knn, logistic_regression, xgboost, adaboost
   feature_type: "combined"  # hog, color_hist, lbp, combined
@@ -161,7 +162,7 @@ training:
   
   random_forest:
     n_estimators: [50, 100, 200]
-    max_depth: [None, 10, 20, 30]
+    max_depth: [null, 10, 20, 30]
     min_samples_split: [2, 5, 10]
   
   knn:
@@ -182,6 +183,38 @@ training:
   adaboost:
     n_estimators: [50, 100, 200]
     learning_rate: [0.5, 1.0, 1.5]
+
+# CNN 설정 (딥러닝 확장)
+cnn:
+  enabled: true
+  model:
+    architecture: "efficientnet_b1"  # v2: b3가 너무 느려 b1으로 교체 (성능/속도 타협)
+    pretrained: true
+    num_classes: null # 데이터셋 분석 후 자동 설정
+    dropout: 0.5
+  
+  training:
+    batch_size: 32
+    epochs: 100
+    learning_rate: 0.001
+    optimizer: "adam"  # adam, sgd
+    criterion: "cross_entropy"
+    scheduler: "step_lr"
+    step_size: 7
+    gamma: 0.1
+    device: "auto"     # cuda, mps(Mac), cpu
+  
+  augmentation:
+    resize: [224, 224]
+    horizontal_flip: true
+    rotation: 15
+    brightness: 0.2
+    contrast: 0.2
+  
+  visualization:
+    save_dir: "data/visualization/cnn"
+    grad_cam_layer: "layer4" # ResNet18 기준
+    num_samples: 5
 
 # 시각화 설정
 visualization:
