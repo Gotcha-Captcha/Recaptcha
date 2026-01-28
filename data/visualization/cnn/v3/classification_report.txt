@@ -1,0 +1,17 @@
+               precision    recall  f1-score   support
+
+      Bicycle       0.96      0.97      0.96       342
+       Bridge       0.73      0.97      0.83       234
+          Bus       0.99      0.96      0.97      1186
+          Car       0.93      0.84      0.88      1254
+      Chimney       0.83      0.87      0.85        46
+    Crosswalk       0.93      0.95      0.94       385
+      Hydrant       1.00      0.99      0.99      1042
+   Motorcycle       0.37      0.87      0.52        45
+         Palm       0.92      0.87      0.90       357
+        Stair       0.60      0.91      0.72        58
+Traffic Light       0.91      0.93      0.92       574
+
+     accuracy                           0.93      5523
+    macro avg       0.83      0.92      0.86      5523
+ weighted avg       0.94      0.93      0.93      5523
