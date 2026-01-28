@@ -30,6 +30,52 @@ from src.preprocess.clahe import apply_clahe_dataset
 from src.preprocess.color_space import convert_color_spaces_dataset
 from src.preprocess.gamma_correction import apply_gamma_correction_dataset
 from src.preprocess.normalize import normalize_dataset
+import shutil
+
+def merge_classes_step(base_dir: Path) -> dict:
+    """
+    Merge classes that are conceptually identical.
+    Focus on merging 'TLight' into 'Traffic Light'.
+    """
+    merged_count = 0
+    target_class = "Traffic Light"
+    source_classes = ["TLight"]
+    
+    stats = {
+        'target_class': target_class,
+        'sources': source_classes,
+        'merged_images': 0,
+        'removed_dirs': []
+    }
+    
+    # 1. raw data에서 통합
+    for source_name in source_classes:
+        # Find all directories matching source_name (case-insensitive)
+        for path in base_dir.rglob("*"):
+            if path.is_dir() and path.name.lower() == source_name.lower():
+                target_dir = path.parent / target_class
+                ensure_dir(target_dir)
+                
+                # Move all images
+                image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
+                for img_path in path.iterdir():
+                    if img_path.suffix.lower() in image_extensions:
+                        # Handle filename collisions
+                        new_path = target_dir / img_path.name
+                        if new_path.exists():
+                            new_path = target_dir / f"merged_{img_path.name}"
+                        
+                        shutil.move(str(img_path), str(new_path))
+                        merged_count += 1
+                
+                # Remove source dir if empty
+                if not any(path.iterdir()):
+                    path.rmdir()
+                    stats['removed_dirs'].append(str(path))
+    
+    stats['merged_images'] = merged_count
+    print(f"✓ Merged {merged_count} images from {source_classes} into {target_class}")
+    return stats
 
 
 def run_preprocessing_pipeline(config_path: Path, 
@@ -149,7 +195,6 @@ def run_preprocessing_pipeline(config_path: Path,
         results['class_distribution'] = class_dist
         
         # Save class distribution
-        import json
         with open(quality_output / "class_distribution.json", 'w') as f:
             json.dump(class_dist, f, indent=2, default=str)
         
@@ -242,6 +287,18 @@ def run_preprocessing_pipeline(config_path: Path,
         with open(quality_output / "quality_checks.json", 'w') as f:
             json.dump(results, f, indent=2, default=str)
     
+    # [NEW STEP] Merge TLight and Traffic Light classes
+    if step is None or step == "merge_classes":
+        print("\n[Step 0.5] Merging Classes (TLight -> Traffic Light)")
+        merge_stats = merge_classes_step(raw_data_dir)
+        results['class_merging'] = merge_stats
+        
+        # Merge stats saved to quality checks
+        quality_output = processed_dir / "quality_checks"
+        ensure_dir(quality_output)
+        with open(quality_output / "class_merging.json", 'w') as f:
+            json.dump(merge_stats, f, indent=2)
+    
     # Step 1: Dataset Structure Analysis
     if not skip_analysis and (step is None or step == "analyze"):
         print("\n[Step 0] Dataset Structure Analysis")
@@ -315,7 +372,7 @@ def run_preprocessing_pipeline(config_path: Path,
         noise_result = reduce_noise_dataset(
             current_dir,
             noise_output,
-            method="gaussian",  # 실험 결과: CLAHE → Gaussian이 최적
+            method=preprocess_config['noise_reduction']['method'],  # Use config value
             threshold=preprocess_config['noise_reduction']['threshold'],
             gaussian_kernel=tuple(preprocess_config['noise_reduction']['gaussian_kernel']),
             gaussian_sigma=preprocess_config['noise_reduction'].get('gaussian_sigma', 1.0),
@@ -437,8 +494,8 @@ def main():
     parser.add_argument('--config', type=str, default='config/config.yaml',
                        help='Path to config.yaml')
     parser.add_argument('--step', type=str, default=None,
-                       choices=['data_quality', 'analyze', 'resize', 'noise_reduction', 'clahe', 
-                               'color_space', 'gamma', 'normalize'],
+                        choices=['data_quality', 'analyze', 'resize', 'noise_reduction', 'clahe', 
+                               'color_space', 'gamma', 'normalize', 'merge_classes'],
                        help='Run specific step only')
     parser.add_argument('--remove-duplicates', action='store_true',
                        help='Remove duplicate images after detection')
